@@ -1,0 +1,20 @@
+{
+  "name": "notion-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "scripts": {
+    "sync": "node src/sync-notion.mjs",
+    "watch": "node src/watch-notes.mjs",
+    "sync:latest": "node src/sync-latest-note.mjs"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.3.0",
+    "chokidar": "^4.0.3",
+    "dotenv": "^16.6.1",
+    "gray-matter": "^4.0.3"
+  }
+}
