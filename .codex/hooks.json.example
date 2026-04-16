@@ -3,7 +3,7 @@
     "Stop": [
       {
         "matcher": "*",
-        "command": "node /path/to/notion-sync/src/sync-latest-note.mjs"
+        "command": "node /path/to/notion-sync/src/codex-stop-hook.mjs"
       }
     ]
   }

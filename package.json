@@ -9,7 +9,8 @@
   "scripts": {
     "sync": "node src/sync-notion.mjs",
     "watch": "node src/watch-notes.mjs",
-    "sync:latest": "node src/sync-latest-note.mjs"
+    "sync:latest": "node src/sync-latest-note.mjs",
+    "hook:stop": "node src/codex-stop-hook.mjs"
   },
   "dependencies": {
     "@notionhq/client": "^2.3.0",
