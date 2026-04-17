@@ -15,9 +15,14 @@ loadProjectEnv(import.meta.url);
 // 这里不直接抛错，而是先让上层决定：
 // - CLI 模式下可以打印友好的跳过提示
 // - Stop hook 模式下可以静默返回并写日志
-export function getMissingEnvKeys() {
-  const required = ["NOTES_DIR", "NOTION_TOKEN", "NOTION_DATABASE_ID", "STATE_FILE"];
-  return required.filter((key) => !process.env[key]);
+export function getMissingEnvKeys(config = {}) {
+  const required = [
+    { key: "NOTES_DIR", value: config.notesDir ?? process.env.NOTES_DIR },
+    { key: "NOTION_TOKEN", value: config.notionToken ?? process.env.NOTION_TOKEN },
+    { key: "NOTION_DATABASE_ID", value: config.notionDatabaseId ?? process.env.NOTION_DATABASE_ID },
+    { key: "STATE_FILE", value: config.stateFile ?? process.env.STATE_FILE }
+  ];
+  return required.filter(({ value }) => !value).map(({ key }) => key);
 }
 
 // 递归收集目录下的所有 Markdown 文件。
@@ -75,13 +80,13 @@ export async function findLatestMarkdownFile(dirPath) {
 // 因此它会统一返回结构化结果，并在每个关键分支都写日志，
 // 这样 CLI 与 hook 就不需要各自重复处理状态记录。
 export async function syncLatestNote(options = {}) {
-  const { silent = false, source = "sync:latest" } = options;
+  const { silent = false, source = "sync:latest", config = {} } = options;
 
   // 先留一个空值占位，方便后续失败时把“原本准备同步哪一篇”写进日志。
   let latest = null;
 
   try {
-    const missing = getMissingEnvKeys();
+    const missing = getMissingEnvKeys(config);
     if (missing.length) {
       // 缺环境变量时不算程序异常，而算“本次跳过”：
       // 这样 Stop hook 不会因为配置未完成而干扰正常会话结束。
@@ -95,7 +100,8 @@ export async function syncLatestNote(options = {}) {
     }
 
     // 只有在依赖齐全时才去扫描 NOTES_DIR，避免无效 IO。
-    latest = await findLatestMarkdownFile(process.env.NOTES_DIR);
+    const notesDir = config.notesDir ?? process.env.NOTES_DIR ?? "";
+    latest = await findLatestMarkdownFile(notesDir);
     if (!latest) {
       // 目录存在但没有 markdown 文件，同样按“跳过”处理并记录原因。
       const result = { status: "skipped", reason: "no_notes" };
@@ -109,7 +115,7 @@ export async function syncLatestNote(options = {}) {
 
     // 真正的同步动作仍然委托给 `syncFile`，
     // 这里负责的是“选哪一篇”和“把结果记下来”。
-    await syncFile(latest, { silent });
+    await syncFile(latest, { silent, config });
 
     const result = { status: "synced", filePath: latest };
     await appendSyncLog(import.meta.url, { source, ...result });
