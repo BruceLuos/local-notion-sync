@@ -10,6 +10,7 @@ export function createSyncRuntime(options = {}) {
 
   let watcher = null;
   let queueWatcher = null;
+  let startInFlight = null;
   const status = {
     phase: "idle",
     isRunning: false,
@@ -60,37 +61,46 @@ export function createSyncRuntime(options = {}) {
     }
   }
 
-  async function start() {
-    const wasPaused = status.isPaused;
-
-    try {
-      if (watcher || queueWatcher || status.isRunning) {
-        await closeActiveWatchers();
-      }
-
-      const handles = await startWatchersImpl({
-        notesDir: config.notesDir,
-        syncLatestImpl: (syncOptions = {}) =>
-          syncLatestNoteImpl({
-            ...syncOptions,
-            config
-          })
-      });
-
-      watcher = handles?.watcher ?? null;
-      queueWatcher = handles?.queueWatcher ?? null;
-      status.phase = "watching";
-      status.isRunning = true;
-      status.isPaused = false;
-      status.lastError = null;
-      return getStatus();
-    } catch (error) {
-      status.phase = wasPaused ? "paused" : "idle";
-      status.isRunning = false;
-      status.isPaused = wasPaused;
-      status.lastError = getErrorMessage(error);
-      throw error;
+  function start() {
+    if (startInFlight) {
+      return startInFlight;
     }
+
+    const wasPaused = status.isPaused;
+    startInFlight = (async () => {
+      try {
+        if (watcher || queueWatcher || status.isRunning) {
+          await closeActiveWatchers();
+        }
+
+        const handles = await startWatchersImpl({
+          notesDir: config.notesDir,
+          syncLatestImpl: (syncOptions = {}) =>
+            syncLatestNoteImpl({
+              ...syncOptions,
+              config
+            })
+        });
+
+        watcher = handles?.watcher ?? null;
+        queueWatcher = handles?.queueWatcher ?? null;
+        status.phase = "watching";
+        status.isRunning = true;
+        status.isPaused = false;
+        status.lastError = null;
+        return getStatus();
+      } catch (error) {
+        status.phase = wasPaused ? "paused" : "idle";
+        status.isRunning = false;
+        status.isPaused = wasPaused;
+        status.lastError = getErrorMessage(error);
+        throw error;
+      } finally {
+        startInFlight = null;
+      }
+    })();
+
+    return startInFlight;
   }
 
   async function syncNow() {

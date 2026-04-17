@@ -95,6 +95,38 @@ test("start is safe to call twice and closes previous watchers", async () => {
   });
 });
 
+test("concurrent start calls do not leak watcher handles", async () => {
+  const closed = [];
+  let startCallCount = 0;
+  let releaseStart;
+  const startGate = new Promise((resolve) => {
+    releaseStart = resolve;
+  });
+
+  const runtime = createSyncRuntime({
+    config: { notesDir: "/tmp/notes" },
+    startWatchersImpl: async () => {
+      const id = ++startCallCount;
+      await startGate;
+      return {
+        watcher: { close: async () => closed.push(`watcher-${id}`) },
+        queueWatcher: { close: async () => closed.push(`queue-${id}`) }
+      };
+    }
+  });
+
+  const firstStart = runtime.start();
+  const secondStart = runtime.start();
+
+  releaseStart();
+  await Promise.all([firstStart, secondStart]);
+
+  assert.equal(startCallCount, 1);
+
+  await runtime.stop();
+  assert.deepEqual(closed, ["watcher-1", "queue-1"]);
+});
+
 test("syncNow forwards source and config then updates lastSyncedFile", async () => {
   const calls = [];
   const config = { notesDir: "/tmp/notes", notionToken: "token" };
