@@ -4,10 +4,12 @@ module.exports = {
   },
   makers: [
     {
-      name: '@electron-forge/maker-squirrel'
+      name: '@electron-forge/maker-squirrel',
+      config: {}
     },
     {
-      name: '@electron-forge/maker-dmg'
+      name: '@electron-forge/maker-dmg',
+      platforms: ['darwin']
     }
   ]
 };
