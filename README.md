@@ -38,6 +38,34 @@ STATE_FILE=/path/to/notion-sync/.state.json
 SOURCE_BASE_URL=
 ```
 
+## 桌面应用（Desktop）
+
+先安装依赖：
+
+```bash
+npm install
+```
+
+启动桌面开发模式：
+
+```bash
+npm run desktop:dev
+```
+
+打包桌面应用：
+
+```bash
+npm run desktop:package
+```
+
+生成可分发安装产物：
+
+```bash
+npm run desktop:make
+```
+
+桌面应用会把配置、状态和日志写入系统的 app-data 目录（按操作系统分配），而不是仓库内本地 `.env` 文件路径。
+
 ## 使用方式
 
 同步单个文件：
