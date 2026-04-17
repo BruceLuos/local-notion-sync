@@ -15,11 +15,13 @@ loadProjectEnv(import.meta.url);
 const requiredKeys = ["NOTION_TOKEN", "NOTION_DATABASE_ID", "STATE_FILE"];
 
 export function resolveSyncConfig(overrides = {}) {
+  const safeOverrides = overrides ?? {};
+
   return {
-    notionToken: overrides.notionToken ?? process.env.NOTION_TOKEN ?? "",
-    notionDatabaseId: overrides.notionDatabaseId ?? process.env.NOTION_DATABASE_ID ?? "",
-    stateFile: overrides.stateFile ?? process.env.STATE_FILE ?? "",
-    sourceBaseUrl: overrides.sourceBaseUrl ?? process.env.SOURCE_BASE_URL ?? ""
+    notionToken: safeOverrides.notionToken ?? process.env.NOTION_TOKEN ?? "",
+    notionDatabaseId: safeOverrides.notionDatabaseId ?? process.env.NOTION_DATABASE_ID ?? "",
+    stateFile: safeOverrides.stateFile ?? process.env.STATE_FILE ?? "",
+    sourceBaseUrl: safeOverrides.sourceBaseUrl ?? process.env.SOURCE_BASE_URL ?? ""
   };
 }
 

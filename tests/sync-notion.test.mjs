@@ -57,3 +57,42 @@ test("resolveSyncConfig prefers explicit runtime config over process.env", async
     }
   }
 });
+
+test("syncFile handles null config by falling back to env validation", async () => {
+  const { syncFile } = await import("../src/sync-notion.mjs");
+
+  const previous = {
+    notionToken: process.env.NOTION_TOKEN,
+    notionDatabaseId: process.env.NOTION_DATABASE_ID,
+    stateFile: process.env.STATE_FILE
+  };
+
+  delete process.env.NOTION_TOKEN;
+  delete process.env.NOTION_DATABASE_ID;
+  delete process.env.STATE_FILE;
+
+  try {
+    await assert.rejects(
+      () => syncFile("/tmp/non-existent-note.md", { config: null }),
+      /缺少环境变量：NOTION_TOKEN, NOTION_DATABASE_ID, STATE_FILE/
+    );
+  } finally {
+    if (previous.notionToken === undefined) {
+      delete process.env.NOTION_TOKEN;
+    } else {
+      process.env.NOTION_TOKEN = previous.notionToken;
+    }
+
+    if (previous.notionDatabaseId === undefined) {
+      delete process.env.NOTION_DATABASE_ID;
+    } else {
+      process.env.NOTION_DATABASE_ID = previous.notionDatabaseId;
+    }
+
+    if (previous.stateFile === undefined) {
+      delete process.env.STATE_FILE;
+    } else {
+      process.env.STATE_FILE = previous.stateFile;
+    }
+  }
+});

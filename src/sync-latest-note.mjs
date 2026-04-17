@@ -16,11 +16,13 @@ loadProjectEnv(import.meta.url);
 // - CLI 模式下可以打印友好的跳过提示
 // - Stop hook 模式下可以静默返回并写日志
 export function getMissingEnvKeys(config = {}) {
+  const safeConfig = config ?? {};
+
   const required = [
-    { key: "NOTES_DIR", value: config.notesDir ?? process.env.NOTES_DIR },
-    { key: "NOTION_TOKEN", value: config.notionToken ?? process.env.NOTION_TOKEN },
-    { key: "NOTION_DATABASE_ID", value: config.notionDatabaseId ?? process.env.NOTION_DATABASE_ID },
-    { key: "STATE_FILE", value: config.stateFile ?? process.env.STATE_FILE }
+    { key: "NOTES_DIR", value: safeConfig.notesDir ?? process.env.NOTES_DIR },
+    { key: "NOTION_TOKEN", value: safeConfig.notionToken ?? process.env.NOTION_TOKEN },
+    { key: "NOTION_DATABASE_ID", value: safeConfig.notionDatabaseId ?? process.env.NOTION_DATABASE_ID },
+    { key: "STATE_FILE", value: safeConfig.stateFile ?? process.env.STATE_FILE }
   ];
   return required.filter(({ value }) => !value).map(({ key }) => key);
 }
@@ -81,12 +83,13 @@ export async function findLatestMarkdownFile(dirPath) {
 // 这样 CLI 与 hook 就不需要各自重复处理状态记录。
 export async function syncLatestNote(options = {}) {
   const { silent = false, source = "sync:latest", config = {} } = options;
+  const safeConfig = config ?? {};
 
   // 先留一个空值占位，方便后续失败时把“原本准备同步哪一篇”写进日志。
   let latest = null;
 
   try {
-    const missing = getMissingEnvKeys(config);
+    const missing = getMissingEnvKeys(safeConfig);
     if (missing.length) {
       // 缺环境变量时不算程序异常，而算“本次跳过”：
       // 这样 Stop hook 不会因为配置未完成而干扰正常会话结束。
@@ -100,7 +103,7 @@ export async function syncLatestNote(options = {}) {
     }
 
     // 只有在依赖齐全时才去扫描 NOTES_DIR，避免无效 IO。
-    const notesDir = config.notesDir ?? process.env.NOTES_DIR ?? "";
+    const notesDir = safeConfig.notesDir ?? process.env.NOTES_DIR ?? "";
     latest = await findLatestMarkdownFile(notesDir);
     if (!latest) {
       // 目录存在但没有 markdown 文件，同样按“跳过”处理并记录原因。
@@ -115,7 +118,7 @@ export async function syncLatestNote(options = {}) {
 
     // 真正的同步动作仍然委托给 `syncFile`，
     // 这里负责的是“选哪一篇”和“把结果记下来”。
-    await syncFile(latest, { silent, config });
+    await syncFile(latest, { silent, config: safeConfig });
 
     const result = { status: "synced", filePath: latest };
     await appendSyncLog(import.meta.url, { source, ...result });
