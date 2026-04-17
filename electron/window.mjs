@@ -9,7 +9,9 @@ export function createMainWindow() {
     height: 760,
     show: false,
     webPreferences: {
-      preload: preloadPath
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false
     }
   });
 }
