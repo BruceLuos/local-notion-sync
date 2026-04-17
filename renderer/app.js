@@ -1,9 +1,13 @@
 const form = document.querySelector("#config-form");
+const notionTokenInput = document.querySelector("#notion-token");
+const databaseIdInput = document.querySelector("#database-id");
 const notesDirInput = document.querySelector("#notes-dir");
 const statusCard = document.querySelector("#status-card");
 const chooseFolderButton = document.querySelector("#choose-folder");
 
 const desktopApi = window.desktopApi ?? null;
+let lastKnownStatus = null;
+let uiErrorMessage = "";
 
 function getErrorMessage(error) {
   if (error instanceof Error) {
@@ -17,23 +21,44 @@ function getErrorMessage(error) {
   return "暂时不可用";
 }
 
-function fallbackStatus(message) {
-  return {
-    phase: "待连接",
-    isRunning: false,
-    lastSyncedFile: null,
-    lastError: message
-  };
+function statusValue(value, fallback) {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  return fallback;
 }
 
-function renderStatus(status = {}) {
-  statusCard.innerHTML = `
-    <h2>当前状态</h2>
-    <p>阶段：${status.phase ?? "未启动"}</p>
-    <p>运行中：${status.isRunning ? "是" : "否"}</p>
-    <p>最近同步文件：${status.lastSyncedFile ?? "暂无"}</p>
-    <p>最近错误：${status.lastError ?? "无"}</p>
-  `;
+function createStatusLine(label, value) {
+  const line = document.createElement("p");
+  line.textContent = `${label}：${value}`;
+  return line;
+}
+
+function renderStatus() {
+  if (!statusCard) {
+    return;
+  }
+
+  const runtimeStatus = lastKnownStatus ?? {};
+  const heading = document.createElement("h2");
+  heading.textContent = "当前状态";
+
+  const fragment = document.createDocumentFragment();
+  fragment.append(heading);
+  fragment.append(createStatusLine("阶段", statusValue(runtimeStatus.phase, "未启动")));
+  fragment.append(createStatusLine("运行中", runtimeStatus.isRunning === true ? "是" : "否"));
+  fragment.append(createStatusLine("最近同步文件", statusValue(runtimeStatus.lastSyncedFile, "暂无")));
+  fragment.append(createStatusLine("最近错误", statusValue(runtimeStatus.lastError, "无")));
+
+  if (uiErrorMessage) {
+    const uiErrorLine = document.createElement("p");
+    uiErrorLine.className = "ui-error";
+    uiErrorLine.textContent = `界面错误：${uiErrorMessage}`;
+    fragment.append(uiErrorLine);
+  }
+
+  statusCard.replaceChildren(fragment);
 }
 
 async function readStatus(errorPrefix = "读取状态失败") {
@@ -43,10 +68,13 @@ async function readStatus(errorPrefix = "读取状态失败") {
     }
 
     const status = await desktopApi.getStatus();
-    renderStatus(status ?? {});
+    lastKnownStatus = status && typeof status === "object" ? status : {};
+    uiErrorMessage = "";
   } catch (error) {
-    renderStatus(fallbackStatus(`${errorPrefix}：${getErrorMessage(error)}`));
+    uiErrorMessage = `${errorPrefix}：${getErrorMessage(error)}`;
   }
+
+  renderStatus();
 }
 
 chooseFolderButton?.addEventListener("click", async () => {
@@ -59,8 +87,12 @@ chooseFolderButton?.addEventListener("click", async () => {
     if (folder && notesDirInput) {
       notesDirInput.value = folder;
     }
+
+    uiErrorMessage = "";
+    renderStatus();
   } catch (error) {
-    renderStatus(fallbackStatus(`选择文件夹失败：${getErrorMessage(error)}`));
+    uiErrorMessage = `选择文件夹失败：${getErrorMessage(error)}`;
+    renderStatus();
   }
 });
 
@@ -73,14 +105,15 @@ form?.addEventListener("submit", async (event) => {
     }
 
     await desktopApi.saveConfig({
-      notionToken: document.querySelector("#notion-token").value,
-      notionDatabaseId: document.querySelector("#database-id").value,
+      notionToken: notionTokenInput?.value ?? "",
+      notionDatabaseId: databaseIdInput?.value ?? "",
       notesDir: notesDirInput?.value ?? ""
     });
 
     await readStatus("保存后读取状态失败");
   } catch (error) {
-    renderStatus(fallbackStatus(`保存配置失败：${getErrorMessage(error)}`));
+    uiErrorMessage = `保存配置失败：${getErrorMessage(error)}`;
+    renderStatus();
   }
 });
 
