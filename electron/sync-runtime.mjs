@@ -11,6 +11,7 @@ export function createSyncRuntime(options = {}) {
   let watcher = null;
   let queueWatcher = null;
   let startInFlight = null;
+  let lifecycleIntent = "idle";
   const status = {
     phase: "idle",
     isRunning: false,
@@ -30,12 +31,7 @@ export function createSyncRuntime(options = {}) {
     return String(error);
   }
 
-  async function closeActiveWatchers() {
-    const activeWatcher = watcher;
-    const activeQueueWatcher = queueWatcher;
-    watcher = null;
-    queueWatcher = null;
-
+  async function closeWatcherHandles(activeWatcher, activeQueueWatcher) {
     let closeError = null;
 
     if (activeWatcher?.close) {
@@ -61,7 +57,16 @@ export function createSyncRuntime(options = {}) {
     }
   }
 
+  async function closeActiveWatchers() {
+    const activeWatcher = watcher;
+    const activeQueueWatcher = queueWatcher;
+    watcher = null;
+    queueWatcher = null;
+    await closeWatcherHandles(activeWatcher, activeQueueWatcher);
+  }
+
   function start() {
+    lifecycleIntent = "watching";
     if (startInFlight) {
       return startInFlight;
     }
@@ -82,6 +87,15 @@ export function createSyncRuntime(options = {}) {
             })
         });
 
+        if (lifecycleIntent !== "watching") {
+          await closeWatcherHandles(handles?.watcher ?? null, handles?.queueWatcher ?? null);
+          status.phase = lifecycleIntent;
+          status.isRunning = false;
+          status.isPaused = lifecycleIntent === "paused";
+          status.lastError = null;
+          return getStatus();
+        }
+
         watcher = handles?.watcher ?? null;
         queueWatcher = handles?.queueWatcher ?? null;
         status.phase = "watching";
@@ -90,9 +104,11 @@ export function createSyncRuntime(options = {}) {
         status.lastError = null;
         return getStatus();
       } catch (error) {
-        status.phase = wasPaused ? "paused" : "idle";
+        const fallbackPhase =
+          lifecycleIntent === "watching" ? (wasPaused ? "paused" : "idle") : lifecycleIntent;
+        status.phase = fallbackPhase;
         status.isRunning = false;
-        status.isPaused = wasPaused;
+        status.isPaused = fallbackPhase === "paused";
         status.lastError = getErrorMessage(error);
         throw error;
       } finally {
@@ -120,6 +136,7 @@ export function createSyncRuntime(options = {}) {
   }
 
   async function stop() {
+    lifecycleIntent = "idle";
     try {
       await closeActiveWatchers();
       status.phase = "idle";
@@ -134,6 +151,7 @@ export function createSyncRuntime(options = {}) {
   }
 
   async function pause() {
+    lifecycleIntent = "paused";
     try {
       await closeActiveWatchers();
       status.phase = "paused";

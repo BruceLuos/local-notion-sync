@@ -127,6 +127,76 @@ test("concurrent start calls do not leak watcher handles", async () => {
   assert.deepEqual(closed, ["watcher-1", "queue-1"]);
 });
 
+test("pause during in-flight start keeps runtime paused and closes created handles", async () => {
+  const closed = [];
+  let releaseStart;
+  const startGate = new Promise((resolve) => {
+    releaseStart = resolve;
+  });
+
+  const runtime = createSyncRuntime({
+    config: { notesDir: "/tmp/notes" },
+    startWatchersImpl: async () => {
+      await startGate;
+      return {
+        watcher: { close: async () => closed.push("watcher") },
+        queueWatcher: { close: async () => closed.push("queue") }
+      };
+    }
+  });
+
+  const startPromise = runtime.start();
+  const pausePromise = runtime.pause();
+
+  releaseStart();
+  const [startResult] = await Promise.all([startPromise, pausePromise]);
+
+  assert.equal(startResult.phase, "paused");
+  assert.deepEqual(runtime.getStatus(), {
+    phase: "paused",
+    isRunning: false,
+    isPaused: true,
+    lastSyncedFile: null,
+    lastError: null
+  });
+  assert.deepEqual(closed, ["watcher", "queue"]);
+});
+
+test("stop during in-flight start keeps runtime idle and closes created handles", async () => {
+  const closed = [];
+  let releaseStart;
+  const startGate = new Promise((resolve) => {
+    releaseStart = resolve;
+  });
+
+  const runtime = createSyncRuntime({
+    config: { notesDir: "/tmp/notes" },
+    startWatchersImpl: async () => {
+      await startGate;
+      return {
+        watcher: { close: async () => closed.push("watcher") },
+        queueWatcher: { close: async () => closed.push("queue") }
+      };
+    }
+  });
+
+  const startPromise = runtime.start();
+  const stopPromise = runtime.stop();
+
+  releaseStart();
+  const [startResult] = await Promise.all([startPromise, stopPromise]);
+
+  assert.equal(startResult.phase, "idle");
+  assert.deepEqual(runtime.getStatus(), {
+    phase: "idle",
+    isRunning: false,
+    isPaused: false,
+    lastSyncedFile: null,
+    lastError: null
+  });
+  assert.deepEqual(closed, ["watcher", "queue"]);
+});
+
 test("syncNow forwards source and config then updates lastSyncedFile", async () => {
   const calls = [];
   const config = { notesDir: "/tmp/notes", notionToken: "token" };
