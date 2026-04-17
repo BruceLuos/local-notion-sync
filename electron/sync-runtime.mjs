@@ -22,74 +22,123 @@ export function createSyncRuntime(options = {}) {
     return { ...status };
   }
 
-  async function start() {
-    const handles = await startWatchersImpl({
-      notesDir: config.notesDir,
-      syncLatestImpl: (syncOptions = {}) =>
-        syncLatestNoteImpl({
-          ...syncOptions,
-          config
-        })
-    });
+  function getErrorMessage(error) {
+    if (error && typeof error.message === "string" && error.message) {
+      return error.message;
+    }
+    return String(error);
+  }
 
-    watcher = handles?.watcher ?? null;
-    queueWatcher = handles?.queueWatcher ?? null;
-    status.phase = "watching";
-    status.isRunning = true;
-    status.isPaused = false;
-    status.lastError = null;
-    return getStatus();
+  async function closeActiveWatchers() {
+    const activeWatcher = watcher;
+    const activeQueueWatcher = queueWatcher;
+    watcher = null;
+    queueWatcher = null;
+
+    let closeError = null;
+
+    if (activeWatcher?.close) {
+      try {
+        await activeWatcher.close();
+      } catch (error) {
+        closeError = error;
+      }
+    }
+
+    if (activeQueueWatcher?.close) {
+      try {
+        await activeQueueWatcher.close();
+      } catch (error) {
+        if (!closeError) {
+          closeError = error;
+        }
+      }
+    }
+
+    if (closeError) {
+      throw closeError;
+    }
+  }
+
+  async function start() {
+    const wasPaused = status.isPaused;
+
+    try {
+      if (watcher || queueWatcher || status.isRunning) {
+        await closeActiveWatchers();
+      }
+
+      const handles = await startWatchersImpl({
+        notesDir: config.notesDir,
+        syncLatestImpl: (syncOptions = {}) =>
+          syncLatestNoteImpl({
+            ...syncOptions,
+            config
+          })
+      });
+
+      watcher = handles?.watcher ?? null;
+      queueWatcher = handles?.queueWatcher ?? null;
+      status.phase = "watching";
+      status.isRunning = true;
+      status.isPaused = false;
+      status.lastError = null;
+      return getStatus();
+    } catch (error) {
+      status.phase = wasPaused ? "paused" : "idle";
+      status.isRunning = false;
+      status.isPaused = wasPaused;
+      status.lastError = getErrorMessage(error);
+      throw error;
+    }
   }
 
   async function syncNow() {
-    const result = await syncLatestNoteImpl({
-      source: "desktop-manual",
-      config
-    });
+    try {
+      const result = await syncLatestNoteImpl({
+        source: "desktop-manual",
+        config
+      });
 
-    status.lastSyncedFile = result?.filePath ?? null;
-    status.lastError = null;
-    return result;
+      status.lastSyncedFile = result?.filePath ?? null;
+      status.lastError = null;
+      return result;
+    } catch (error) {
+      status.lastError = getErrorMessage(error);
+      throw error;
+    }
   }
 
   async function stop() {
-    if (watcher?.close) {
-      await watcher.close();
+    try {
+      await closeActiveWatchers();
+      status.phase = "idle";
+      status.isRunning = false;
+      status.isPaused = false;
+      status.lastError = null;
+      return getStatus();
+    } catch (error) {
+      status.lastError = getErrorMessage(error);
+      throw error;
     }
-    if (queueWatcher?.close) {
-      await queueWatcher.close();
-    }
-
-    watcher = null;
-    queueWatcher = null;
-    status.phase = "idle";
-    status.isRunning = false;
-    status.isPaused = false;
-    return getStatus();
   }
 
   async function pause() {
-    if (watcher?.close) {
-      await watcher.close();
+    try {
+      await closeActiveWatchers();
+      status.phase = "paused";
+      status.isRunning = false;
+      status.isPaused = true;
+      status.lastError = null;
+      return getStatus();
+    } catch (error) {
+      status.lastError = getErrorMessage(error);
+      throw error;
     }
-    if (queueWatcher?.close) {
-      await queueWatcher.close();
-    }
-
-    watcher = null;
-    queueWatcher = null;
-    status.phase = "paused";
-    status.isRunning = false;
-    status.isPaused = true;
-    return getStatus();
   }
 
   async function resume() {
-    await start();
-    status.phase = "watching";
-    status.isRunning = true;
-    status.isPaused = false;
-    return getStatus();
+    return start();
   }
 
   return { getStatus, start, syncNow, stop, pause, resume };
