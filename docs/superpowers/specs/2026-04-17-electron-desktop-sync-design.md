@@ -1,323 +1,323 @@
-# Electron Desktop Sync Design
+# Electron 桌面同步设计
 
-## Background
+## 背景
 
-The current repository is a developer-oriented Node.js toolchain for syncing local Markdown notes into a Notion database. It already supports:
+当前仓库本质上是一套面向开发者的 Node.js 工具链，用来把本地 Markdown 笔记同步到 Notion 数据库。它已经支持：
 
-- syncing one file on demand
-- watching a directory and syncing on save
-- keeping a local `slug -> pageId` state cache
-- using a Codex stop hook plus a local queue as a fallback trigger
+- 按需同步单个文件
+- 监听目录并在保存时自动同步
+- 维护本地 `slug -> pageId` 状态缓存
+- 使用 Codex stop hook 加本地队列作为兜底触发机制
 
-This works for technical users, but it still assumes users can clone a repository, install Node.js dependencies, configure `.env`, and run commands manually. That setup is not appropriate for non-technical users, and it creates adoption friction even for teammates who only want "install once, then let it run."
+这套能力对技术用户是可用的，但它依然默认用户能够 clone 仓库、安装 Node.js 依赖、配置 `.env`、并手动运行命令。这样的使用方式并不适合非技术用户，即使是只想“装一次、以后自动运行”的同事，也会有明显上手门槛。
 
-The requested direction is to evolve the project into a desktop product for ordinary users on macOS and Windows, while keeping the current "choose a local folder and sync its Markdown files into Notion" core behavior.
+当前明确的目标方向，是把这个项目演进成一个面向普通用户的桌面产品，支持 macOS 和 Windows，同时保留“选择一个本地文件夹，把其中的 Markdown 自动同步到 Notion”这一核心能力。
 
-## Goals
+## 目标
 
-- Ship a desktop application for macOS and Windows that non-technical users can install without using the command line
-- Let users connect to Notion, choose a local Markdown folder, and enable automatic background sync
-- Keep syncing active when the main window is closed by running in the system tray or menu bar
-- Support optional launch-at-login so sync stays active after reboot
-- Reuse the existing Node.js sync logic as much as possible instead of rewriting the sync engine
-- Provide understandable status and error feedback for ordinary users
+- 提供一个适用于 macOS 和 Windows 的桌面应用，让非技术用户无需命令行即可安装使用
+- 让用户能够连接 Notion、选择本地 Markdown 文件夹，并开启后台自动同步
+- 在主窗口关闭后仍保持同步运行，通过系统托盘或菜单栏持续驻留
+- 支持可选的开机自启，让重启之后同步仍能继续工作
+- 尽可能复用现有 Node.js 同步逻辑，而不是重写整个同步引擎
+- 为普通用户提供可理解的状态反馈和错误提示
 
-## Non-Goals
+## 非目标
 
-- Supporting Linux in the first release
-- Building an in-app Markdown editor
-- Supporting multiple folders or multiple Notion databases in the first release
-- Implementing full OAuth-based Notion auth in the first release
-- Adding user accounts, cloud sync of app settings, or team collaboration features
-- Replacing the existing CLI workflows for technical users
-- Shipping auto-update in the first release
+- 第一版不支持 Linux
+- 第一版不内置 Markdown 编辑器
+- 第一版不支持多个文件夹或多个 Notion 数据库
+- 第一版不实现完整的 OAuth 式 Notion 授权
+- 第一版不做账号体系、云端配置同步或团队协作功能
+- 第一版不替代现有 CLI 给技术用户使用的方式
+- 第一版不做自动更新
 
-## Product Direction
+## 产品方向
 
-The first release should be an Electron desktop application with a small settings UI and a persistent background presence.
+第一版应做成一个 Electron 桌面应用，带一个轻量设置界面，并具备持续后台运行能力。
 
-The user experience should feel like this:
+目标用户体验应当是：
 
-1. Install the app
-2. Open it once to complete setup
-3. Paste a Notion integration token and database ID
-4. Choose a local folder containing Markdown notes
-5. Leave the app running in the background
-6. Edits to Markdown files sync automatically to Notion
+1. 安装应用
+2. 第一次打开时完成初始化配置
+3. 粘贴 Notion integration token 和 database ID
+4. 选择一个本地 Markdown 笔记文件夹
+5. 让应用在后台持续运行
+6. 之后只要本地 Markdown 有修改，就自动同步到 Notion
 
-For ordinary users, the desktop app becomes the primary interface. The existing CLI, stop hook, and queue remain internal or developer-facing implementation details rather than part of the normal product workflow.
+对于普通用户来说，桌面应用应该成为主要入口。现有 CLI、stop hook、queue 这些机制可以继续保留，但它们应当退到内部实现或开发者工作流中，而不是日常产品主路径。
 
-## Why Electron
+## 为什么选择 Electron
 
-Three implementation shapes were considered:
+一共考虑了三种实现形态：
 
-1. Electron single desktop app
-2. Tauri desktop app
-3. Desktop shell plus separate background service
+1. Electron 单体桌面应用
+2. Tauri 桌面应用
+3. 桌面壳加独立后台服务
 
-Electron is the recommended first-release choice because it offers the shortest path from the current codebase to a real installable product:
+第一版推荐选择 Electron，因为它是从当前代码库走向可安装产品的最短路径：
 
-- the existing sync logic is already written for Node.js
-- file watching, local filesystem access, tray integration, and startup behavior fit naturally in Electron's main process
-- packaging for macOS and Windows is mature
-- the team can focus on productizing the existing sync engine instead of rewriting it
+- 现有同步逻辑本来就是基于 Node.js 编写的
+- 文件监听、本地文件系统访问、托盘集成、启动行为管理都很适合放在 Electron 主进程里
+- macOS 和 Windows 的打包分发方案已经比较成熟
+- 团队可以把精力放在“把现有同步引擎产品化”，而不是先重写底层能力
 
-Tauri may be attractive later for footprint reasons, but it would increase first-release complexity because the current Node-based watcher and sync orchestration would need to be wrapped more carefully or partially rewritten. A split shell-plus-service architecture is also viable later, but it adds avoidable packaging and lifecycle complexity for the MVP.
+Tauri 未来可能因为体积更轻而有吸引力，但在第一版里，它会明显增加复杂度，因为当前基于 Node 的 watcher 和同步调度要么需要更复杂的封装，要么需要部分重写。桌面壳加后台服务的方案后续也可以考虑，但对 MVP 来说会带来额外的安装、生命周期和跨平台分发复杂度，不值得在第一版引入。
 
-## Architecture
+## 架构
 
-The product should be organized into two layers.
+产品建议拆成两层。
 
-### 1. Sync Core
+### 1. 同步核心层
 
-This layer reuses and incrementally refines the existing Node.js modules:
+这一层复用并逐步整理现有 Node.js 模块：
 
-- Markdown parsing
-- Notion API writes
-- slug/page state persistence
-- sync logging
-- watch-triggered sync scheduling
+- Markdown 解析
+- Notion API 写入
+- slug/page 状态持久化
+- 同步日志
+- 基于监听事件的同步调度
 
-This layer should stay usable outside the desktop app so existing CLI workflows remain possible for advanced users and for internal debugging.
+这一层应继续保持“可脱离桌面应用单独使用”的能力，这样现有 CLI 工作流仍可用于高级用户和内部调试。
 
-### 2. Desktop App
+### 2. 桌面应用层
 
-This is the Electron product shell and should contain:
+这一层是 Electron 产品外壳，应包含：
 
-- `main` process for app lifecycle, tray, startup, notifications, watcher ownership, and sync orchestration
-- `preload` bridge for a safe renderer API
-- `renderer` UI for onboarding, settings, status, and error display
+- `main` 进程：负责应用生命周期、托盘、开机启动、通知、watcher 持有与同步调度
+- `preload`：提供安全的 renderer 调用桥
+- `renderer`：提供 onboarding、设置、状态和错误展示界面
 
-The desktop layer should call the sync core directly rather than shelling out to `npm run watch`. The goal is one integrated application, not a packaged terminal workflow.
+桌面层应该直接调用同步核心，而不是再去 shell 出 `npm run watch`。目标是一个整合式应用，而不是把终端工作流打包一层皮。
 
-## First-Run Flow
+## 首次使用流程
 
-The initial setup experience should be a short onboarding wizard.
+首次配置建议做成一个短向导。
 
-### Step 1: Welcome
+### 第一步：欢迎页
 
-Explain one core concept in plain language:
+用普通用户能看懂的话解释一件事：
 
-- this app watches a local folder of Markdown files
-- it automatically syncs changes into a Notion database
+- 这个应用会监听你选择的本地 Markdown 文件夹
+- 它会把这些文件的改动自动同步到 Notion 数据库
 
-### Step 2: Connect Notion
+### 第二步：连接 Notion
 
-First release input fields:
+第一版输入项为：
 
 - Notion integration token
 - Notion database ID
 
-These inputs should be stored locally in the app's persistent config, not in a repo `.env` file.
+这些配置应保存在应用自己的本地持久化配置里，而不是仓库里的 `.env` 文件。
 
-The UI should also explain, in non-technical language:
+界面还需要用非技术化语言说明：
 
-- how to create an internal integration
-- that the target database must be shared with that integration
+- 怎么创建一个 internal integration
+- 目标数据库需要共享给这个 integration
 
-### Step 3: Choose Folder
+### 第三步：选择文件夹
 
-The user selects one local folder. The app validates:
+用户选择一个本地文件夹，应用需要校验：
 
-- the folder exists
-- the folder is readable
-- the folder can contain Markdown files
+- 文件夹确实存在
+- 文件夹可读
+- 文件夹可用于存放 Markdown 文件
 
-### Step 4: Preflight Check
+### 第四步：预检查
 
-Before enabling background sync, the app runs a lightweight validation:
+在真正开启后台同步前，应用先做一次轻量校验：
 
-- Notion credentials can authenticate
-- the database is reachable
-- the folder is accessible
-- local app storage can save config, state, and logs
+- Notion 凭证可以正常鉴权
+- 目标数据库可访问
+- 本地文件夹可访问
+- 本地应用存储可以正确保存配置、状态和日志
 
-### Step 5: Ready
+### 第五步：完成
 
-The app confirms:
+应用明确告诉用户：
 
-- automatic sync is enabled
-- the app will keep running in the background
-- closing the main window will not stop syncing
+- 自动同步已经开启
+- 应用会在后台持续运行
+- 关闭主窗口不会停止同步
 
-## Ongoing App Behavior
+## 持续运行时的行为
 
-### Background Presence
+### 后台驻留
 
-Once configured, the app should start the watcher automatically when the application launches. If configuration is missing or invalid, the app should open the main window instead of silently failing.
+只要配置完整，应用启动后就应自动拉起 watcher。如果配置缺失或失效，应用应该主动打开主窗口引导用户处理，而不是悄悄失败。
 
-Closing the main window should hide it rather than quit the app. The app should continue running in the tray or menu bar and keep sync active.
+当用户关闭主窗口时，应用应隐藏而不是退出。应用继续留在托盘或菜单栏里，并保持同步能力。
 
-### Tray Menu
+### 托盘菜单
 
-The tray or menu bar menu should stay intentionally small:
+托盘或菜单栏菜单应故意保持精简：
 
-- Open Settings
-- View Status
-- Sync Now
-- Pause Sync / Resume Sync
-- Quit
+- 打开设置
+- 查看状态
+- 立即同步
+- 暂停同步 / 恢复同步
+- 退出
 
-This keeps the desktop app understandable for non-technical users and avoids overloading the first release UI.
+这样更适合非技术用户，也能避免第一版界面过重。
 
-### Launch at Login
+### 开机自启
 
-The app should expose a simple setting for launch at login. This should be user-controlled and recommended during onboarding or settings.
+应用应提供一个简单开关来控制开机自启。这个能力由用户自行决定，但建议在 onboarding 或设置页中明确推荐。
 
-### Notifications
+### 通知
 
-System notifications should be used sparingly:
+系统通知应节制使用：
 
-- show on first successful setup
-- show on repeated or important failures
-- avoid notifying on every successful file sync
+- 第一次配置成功时提示
+- 连续失败或关键失败时提示
+- 不要每次成功同步都弹通知
 
-## Sync Trigger Model
+## 同步触发模型
 
-For the desktop product, the primary trigger path should be:
+对桌面产品来说，主触发链路应当是：
 
-- local Markdown file changes
-- watcher sees the change
-- sync core processes the file
-- status and logs update
+- 本地 Markdown 文件发生变化
+- watcher 捕获到变化
+- 同步核心处理对应文件
+- 状态和日志更新
 
-The current stop-hook plus queue path is still useful for developer workflows, but it is not the main product mechanism for ordinary users. The desktop app should not depend on Codex hooks or `/tmp` queue files to do its core job.
+当前 stop-hook 加 queue 的链路对开发者工作流仍然有价值，但它不应再是普通用户产品的主同步机制。桌面应用不应该依赖 Codex hook 或 `/tmp` 队列文件来完成核心同步功能。
 
-## Data and Local Storage
+## 数据与本地存储
 
-The desktop app should maintain local app data outside the repository, in OS-appropriate application data directories.
+桌面应用应把本地数据存放在仓库之外，放入操作系统约定的应用数据目录中。
 
-This local app data should include:
+这些本地数据应包括：
 
-- user configuration
-- cached `slug -> pageId` state
-- sync logs
-- lightweight runtime metadata such as last successful sync time
+- 用户配置
+- `slug -> pageId` 状态缓存
+- 同步日志
+- 诸如最近一次成功同步时间之类的轻量运行状态
 
-The desktop app should stop requiring ordinary users to manage:
+桌面应用应让普通用户不再需要管理这些概念：
 
 - `.env`
-- `.state.json` paths
-- repository-local config files
-- temporary queue internals
+- `.state.json` 路径
+- 仓库内配置文件
+- 临时队列等内部机制
 
-## Error Handling
+## 错误处理
 
-The product should translate implementation failures into user-readable messages.
+产品应把底层实现错误翻译成用户可读的提示。
 
-Examples:
+例如：
 
-- "Notion connection failed. Please check your integration token."
-- "This database has not been shared with your integration yet."
-- "The selected folder is unavailable."
-- "A note could not be synced because required metadata is missing."
+- “Notion 连接失败，请检查 integration token。”
+- “当前数据库还没有共享给这个 integration。”
+- “所选文件夹当前不可访问。”
+- “某篇笔记缺少必要元数据，暂时无法同步。”
 
-Detailed logs should still exist for debugging, but logs are secondary. The main product surface should prioritize clear guidance over raw stack traces.
+详细日志依然需要保留，用于排查问题，但日志应是辅助入口，不应让普通用户直接面对原始堆栈信息。
 
-## Status Surface
+## 状态展示
 
-The main window should include a simple status section showing:
+主窗口应提供一个简单状态区，至少展示：
 
-- whether sync is active
-- the selected folder
-- the last successful sync time
-- the most recent synced file
-- the most recent error, if any
+- 当前是否正在同步
+- 当前选中的文件夹
+- 最近一次成功同步时间
+- 最近一次成功同步的文件
+- 最近一次错误信息（如果有）
 
-The app should also offer a way to open the local logs directory from the UI for support and troubleshooting.
+界面中还应提供“打开日志目录”的入口，方便支持和排查。
 
-## Packaging and Distribution
+## 打包与分发
 
-The first release should produce installable packages for:
+第一版应产出这些安装包：
 
 - macOS
 - Windows
 
-The recommended packaging path is Electron Forge, because it aligns well with the chosen Electron architecture and offers a straightforward path to installers.
+推荐使用 Electron Forge 作为第一阶段的打包路径，因为它与当前选定的 Electron 架构契合度高，也更容易产出安装器。
 
-Initial distribution can be done with unsigned or lightly managed internal builds for testing, but broader non-technical distribution should plan for:
+测试阶段可以先接受未签名或轻量管理的内部构建，但如果要给更广泛的非技术用户使用，必须尽早规划：
 
-- macOS code signing
+- macOS 代码签名
 - macOS notarization
-- Windows installer signing
+- Windows 安装器签名
 
-Without signing, installation friction for normal users will be too high.
+如果没有签名，普通用户在安装阶段会遇到很大阻力。
 
-## Repository Evolution
+## 仓库演进方式
 
-The repository should evolve without discarding the current CLI-oriented core.
+这个仓库的演进不应以“推翻现有 CLI 核心”为代价。
 
-Recommended direction:
+建议方向：
 
-- keep the existing sync logic as a reusable Node.js core
-- add an Electron app layer that imports and orchestrates that core
-- preserve CLI entry points for development, debugging, and power users
+- 保留现有同步逻辑作为可复用的 Node.js 核心
+- 新增 Electron 应用层来导入和调度这个核心
+- 保留 CLI 入口，继续服务开发、调试和高级用户
 
-This avoids a rewrite and keeps the codebase adaptable. It also makes it easier to test the core independently from the desktop shell.
+这样可以避免重写，同时保持代码库的适应性。它也更有利于把同步核心与桌面壳分别测试。
 
-## MVP Scope
+## MVP 范围
 
-The first implementation plan should cover only these end-user capabilities:
+第一版实现计划只覆盖这些终端用户能力：
 
-- installable macOS and Windows desktop app
-- onboarding flow for token, database ID, and folder selection
-- automatic folder watching and background sync
-- tray/menu bar persistence after window close
-- launch-at-login setting
-- status view with recent success/error information
-- manual "Sync Now" action
+- 可安装的 macOS 和 Windows 桌面应用
+- 包含 token、database ID、文件夹选择的 onboarding 流程
+- 自动监听文件夹并在后台同步
+- 关闭窗口后继续托盘或菜单栏常驻
+- 开机自启开关
+- 带最近成功/失败信息的状态页
+- “立即同步”按钮
 
-Everything else should be deferred until after MVP validation.
+其余能力都应推迟到 MVP 验证之后再决定。
 
-## Testing Strategy
+## 测试策略
 
-Testing should be split by layer.
+测试应按层拆分。
 
-### Sync Core Tests
+### 同步核心测试
 
-Continue and expand automated tests around:
+继续并扩展这些自动化测试：
 
-- Markdown parsing
-- sync scheduling
-- state persistence
-- logging
-- Notion request shaping
+- Markdown 解析
+- 同步调度
+- 状态持久化
+- 日志
+- Notion 请求构造
 
-### Desktop Layer Tests
+### 桌面层测试
 
-Add focused tests around:
+新增这些聚焦测试：
 
-- config loading and persistence
-- startup behavior with complete vs incomplete config
-- tray action wiring
-- renderer-to-main IPC contract
-- watcher lifecycle management
+- 配置读取与持久化
+- 配置完整与不完整时的启动行为
+- 托盘操作绑定
+- renderer 到 main 的 IPC 合约
+- watcher 生命周期管理
 
-### Manual Product Verification
+### 手动产品验证
 
-Before release candidates, verify at least:
+在 release candidate 之前，至少验证：
 
-1. Fresh install on macOS
-2. Fresh install on Windows
-3. First-run setup with valid Notion configuration
-4. First-run setup with invalid Notion configuration
-5. Background sync after closing the main window
-6. Launch-at-login behavior
-7. Recovery from temporary Notion/network failure
+1. macOS 全新安装
+2. Windows 全新安装
+3. 使用有效 Notion 配置完成首次设置
+4. 使用无效 Notion 配置完成首次设置
+5. 关闭主窗口后后台同步仍然有效
+6. 开机自启行为正确
+7. 从临时 Notion 或网络失败中恢复正常
 
-## Risks and Boundaries
+## 风险与边界
 
-- Packaging a developer-oriented repository into a polished desktop product will surface configuration and lifecycle issues that the CLI path currently hides
-- Notion token plus database ID is acceptable for MVP, but still somewhat technical for normal users
-- Cross-platform tray behavior and startup behavior will need explicit testing because macOS and Windows differ in UX expectations
-- Unsigned builds will be sufficient for internal testing but not ideal for broad distribution
+- 把一个偏开发者工具的仓库做成完整桌面产品，会暴露出许多 CLI 模式下被隐藏的配置与生命周期问题
+- `token + database ID` 作为 MVP 可以接受，但对普通用户来说依然带有一定技术门槛
+- 跨平台托盘行为和开机启动行为在 macOS 与 Windows 上有差异，必须显式测试
+- 未签名构建适合内部测试，但不适合广泛分发
 
-## Success Criteria
+## 成功标准
 
-The MVP is successful when:
+满足以下条件即可认为 MVP 成功：
 
-- a non-technical macOS or Windows user can install the app without cloning a repository
-- the user can finish setup through the GUI without editing `.env` or running commands
-- the app continues syncing after the main window is closed
-- Markdown file changes in the chosen folder appear in Notion reliably
-- the user can understand sync state and fix common setup errors from the app UI
+- 非技术用户在 macOS 或 Windows 上无需 clone 仓库即可安装应用
+- 用户无需编辑 `.env` 或运行命令，即可通过 GUI 完成配置
+- 主窗口关闭后应用仍会继续同步
+- 选中文件夹里的 Markdown 变更可以稳定出现在 Notion 中
+- 用户能够从应用界面理解当前同步状态，并解决常见配置问题
