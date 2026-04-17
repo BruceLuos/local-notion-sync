@@ -17,8 +17,7 @@ export function createDesktopTray({ onOpen, onSyncNow, onTogglePause, onQuit }) 
     Menu.buildFromTemplate([
       { label: "打开设置", click: onOpen },
       { label: "立即同步", click: onSyncNow },
-      { label: "暂停", click: () => onTogglePause?.("pause") },
-      { label: "恢复同步", click: () => onTogglePause?.("resume") },
+      { label: "暂停 / 恢复同步", click: onTogglePause },
       { type: "separator" },
       { label: "退出", click: onQuit }
     ])
