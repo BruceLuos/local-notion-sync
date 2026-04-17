@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notion Sync Desktop</title>
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <p class="eyebrow">Notion Sync</p>
+        <h1>把本地 Markdown 自动同步到 Notion</h1>
+        <p class="lede">完成一次配置后，应用会在后台持续监听并自动同步。</p>
+      </section>
+
+      <section class="panel">
+        <form id="config-form">
+          <label>Notion Token<input id="notion-token" type="password" /></label>
+          <label>Database ID<input id="database-id" type="text" /></label>
+          <label>本地文件夹<input id="notes-dir" type="text" readonly /></label>
+          <div class="actions">
+            <button id="choose-folder" type="button">选择文件夹</button>
+            <button type="submit">保存并启动</button>
+          </div>
+        </form>
+
+        <div id="status-card" class="status-card"></div>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
