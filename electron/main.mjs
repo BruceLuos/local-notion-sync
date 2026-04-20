@@ -5,6 +5,7 @@ import { loadDesktopConfig, saveDesktopConfig } from "./config-store.mjs";
 import { registerDesktopIpc } from "./ipc.mjs";
 import { createSyncRuntime } from "./sync-runtime.mjs";
 import { createDesktopTray } from "./tray.mjs";
+import { openDesktopWindow } from "./window-controller.mjs";
 import { createMainWindow } from "./window.mjs";
 
 const rendererEntryPath = fileURLToPath(new URL("../renderer/index.html", import.meta.url));
@@ -13,6 +14,7 @@ let runtime;
 let mainWindow;
 let tray;
 let paths;
+let desktopIpcRegistered = false;
 
 function isConfigComplete(config = {}) {
   return Boolean(config.notesDir && config.notionToken && config.notionDatabaseId);
@@ -41,35 +43,69 @@ function runTrayAction(actionName, action) {
 }
 
 async function openMainWindow({ showOnReady = false } = {}) {
-  const window = createMainWindow();
-  mainWindow = window;
+  return openDesktopWindow({
+    showOnReady,
+    createWindowImpl: () => {
+      const window = createMainWindow();
+      mainWindow = window;
+      return window;
+    },
+    shouldHideOnClose: () => !app.isQuiting,
+    onClosed: (window) => {
+      if (mainWindow === window) {
+        mainWindow = null;
+      }
+    },
+    onBeforeLoad: async (window) => {
+      if (desktopIpcRegistered) {
+        return;
+      }
 
-  window.once("ready-to-show", () => {
-    if (showOnReady && !window.isDestroyed()) {
-      window.show();
-    }
+      registerDesktopIpc({
+        paths,
+        getRuntime: () => runtime,
+        loadConfig: loadDesktopConfig,
+        saveConfig: async (filePath, payload) => {
+          await saveDesktopConfig(filePath, payload);
+          app.setLoginItemSettings({
+            openAtLogin: Boolean(payload.launchAtLogin)
+          });
+          const previousRuntime = runtime;
+          const previousStatus = previousRuntime.getStatus();
+          const nextRuntime = createRuntimeForConfig(payload);
+          let previousRuntimeStopped = false;
+
+          try {
+            await previousRuntime.stop();
+            previousRuntimeStopped = true;
+            runtime = nextRuntime;
+            if (isConfigComplete(payload)) {
+              await runtime.start();
+            }
+          } catch (error) {
+            runtime = previousRuntime;
+            if (previousRuntimeStopped) {
+              try {
+                if (previousStatus.isPaused) {
+                  await previousRuntime.pause();
+                } else if (previousStatus.isRunning) {
+                  await previousRuntime.start();
+                }
+              } catch (restoreError) {
+                console.error("Failed to restore previous runtime after save-config error:", restoreError);
+              }
+            }
+            throw error;
+          }
+
+          return payload;
+        },
+        browserWindow: window
+      });
+      desktopIpcRegistered = true;
+    },
+    loadRendererImpl: (window) => window.loadFile(rendererEntryPath)
   });
-
-  window.on("close", (event) => {
-    if (!app.isQuiting) {
-      event.preventDefault();
-      window.hide();
-    }
-  });
-
-  window.once("closed", () => {
-    if (mainWindow === window) {
-      mainWindow = null;
-    }
-  });
-
-  try {
-    await window.loadFile(rendererEntryPath);
-  } catch (error) {
-    console.error("Failed to load renderer entry:", error);
-  }
-
-  return window;
 }
 
 app.whenReady().then(async () => {
@@ -81,48 +117,6 @@ app.whenReady().then(async () => {
   runtime = createRuntimeForConfig(savedConfig);
 
   const window = await openMainWindow({ showOnReady: !shouldStartRuntime });
-
-  registerDesktopIpc({
-    paths,
-    getRuntime: () => runtime,
-    loadConfig: loadDesktopConfig,
-    saveConfig: async (filePath, payload) => {
-      await saveDesktopConfig(filePath, payload);
-      app.setLoginItemSettings({
-        openAtLogin: Boolean(payload.launchAtLogin)
-      });
-      const previousRuntime = runtime;
-      const previousStatus = previousRuntime.getStatus();
-      const nextRuntime = createRuntimeForConfig(payload);
-      let previousRuntimeStopped = false;
-
-      try {
-        await previousRuntime.stop();
-        previousRuntimeStopped = true;
-        runtime = nextRuntime;
-        if (isConfigComplete(payload)) {
-          await runtime.start();
-        }
-      } catch (error) {
-        runtime = previousRuntime;
-        if (previousRuntimeStopped) {
-          try {
-            if (previousStatus.isPaused) {
-              await previousRuntime.pause();
-            } else if (previousStatus.isRunning) {
-              await previousRuntime.start();
-            }
-          } catch (restoreError) {
-            console.error("Failed to restore previous runtime after save-config error:", restoreError);
-          }
-        }
-        throw error;
-      }
-
-      return payload;
-    },
-    browserWindow: window
-  });
 
   tray = createDesktopTray({
     onOpen: () => {

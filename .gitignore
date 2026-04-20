@@ -4,3 +4,4 @@ node_modules/
 .DS_Store
 npm-debug.log*
 launchd/com.bruceluo.notion-sync.plist
+out/

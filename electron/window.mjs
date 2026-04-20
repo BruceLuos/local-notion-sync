@@ -1,17 +1,6 @@
 import { BrowserWindow } from "electron";
-import { fileURLToPath } from "node:url";
-
-const preloadPath = fileURLToPath(new URL("./preload.mjs", import.meta.url));
+import { getMainWindowOptions } from "./window-options.mjs";
 
 export function createMainWindow() {
-  return new BrowserWindow({
-    width: 980,
-    height: 760,
-    show: false,
-    webPreferences: {
-      preload: preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
+  return new BrowserWindow(getMainWindowOptions());
 }

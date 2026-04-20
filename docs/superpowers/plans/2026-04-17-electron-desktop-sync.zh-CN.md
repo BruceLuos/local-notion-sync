@@ -188,6 +188,14 @@
 - preload 桥接
 - IPC channel 常量
 
+补充实现注意点：
+- 当前 `preload` 使用的是 ESM 文件 `electron/preload.mjs`
+- 因此 BrowserWindow 的 `webPreferences` 需要显式设置 `sandbox: false`
+- 否则 preload 可能不会正常执行，renderer 里会出现 `desktopApi is unavailable` 这类错误
+- renderer 首屏如果会立刻调用 `desktopApi.getStatus()` 之类的 IPC
+- 那么主进程必须先注册 IPC handler，再加载 renderer 页面
+- 否则启动阶段可能出现 `No handler registered for 'desktop:get-status'`
+
 ### 2. 桌面配置基础已经具备
 
 当前已支持：
